@@ -1,0 +1,32 @@
+[project]
+name = "car-sales-feed"
+version = "0.1.0"
+description = "Scrape car listings from OLX Indonesia and Facebook Marketplace, score trustworthiness, and publish to social media"
+requires-python = ">=3.11"
+dependencies = [
+    "playwright==1.52.0",
+    "sqlalchemy==2.0.36",
+    "apscheduler==3.10.4",
+    "pyyaml==6.0.2",
+    "croniter==5.0.1",
+    "aiohttp==3.11.11",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.24.0",
+    "hypothesis==6.119.3",
+    "pytest-mock==3.14.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["config*", "scrapers*", "scoring*", "persistence*", "publishers*", "orchestration*", "models*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

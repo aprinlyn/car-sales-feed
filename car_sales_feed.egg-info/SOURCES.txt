@@ -1,0 +1,15 @@
+pyproject.toml
+car_sales_feed.egg-info/PKG-INFO
+car_sales_feed.egg-info/SOURCES.txt
+car_sales_feed.egg-info/dependency_links.txt
+car_sales_feed.egg-info/requires.txt
+car_sales_feed.egg-info/top_level.txt
+config/__init__.py
+config/manager.py
+models/__init__.py
+orchestration/__init__.py
+persistence/__init__.py
+publishers/__init__.py
+scoring/__init__.py
+scrapers/__init__.py
+tests/test_config_properties.py

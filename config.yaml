@@ -1,0 +1,44 @@
+browser:
+  profile_dir: "./browser_profile"
+
+scraping:
+  olx:
+    max_pages: 10
+    page_delay_seconds: 3
+    timeout_seconds: 30
+    captcha_pause_seconds: 60
+  facebook:
+    max_listings: 100
+    timeout_seconds: 30
+    captcha_pause_seconds: 60
+
+scoring:
+  thresholds:
+    safe_min: 70
+    suspicious_min: 40
+  weights:
+    price_deviation: 0.20
+    image_count: 0.10
+    description_length: 0.10
+    seller_age: 0.15
+    seller_listing_history: 0.10
+    contact_info: 0.10
+    mileage_consistency: 0.10
+    location_specificity: 0.15
+
+publishing:
+  twitter:
+    max_posts_per_run: 30
+    post_interval_seconds: 120
+  threads:
+    max_posts_per_run: 25
+    post_interval_seconds: 120
+
+scheduling:
+  scrape_cron: "0 7 * * *"
+  publish_cron: "0 17 * * *"
+
+database:
+  url: "sqlite:///car_sales_feed.db"
+  retry_max: 3
+  dead_letter_path: "dead_letter.jsonl"
