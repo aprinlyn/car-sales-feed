@@ -1,3 +1,4 @@
 .kiro/
 .pytest_cache/
 .env
+.browser_profile
