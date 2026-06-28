@@ -249,18 +249,26 @@ class OLXScraper(BaseScraper):
             if await self._detect_captcha(detail_page):
                 await self._handle_captcha(detail_page)
 
-            # Extract description (click "Selengkapnya" to expand if present)
+            # Extract description
+            # First try clicking "Selengkapnya" button to open full description modal
             try:
                 expand_btn = await detail_page.query_selector(OLXSelectors.DESCRIPTION_EXPAND)
-                if expand_btn:
+                if expand_btn and await expand_btn.is_visible():
                     await expand_btn.click()
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(1)
+
+                    # Read from the modal that appears after clicking
+                    modal_desc = await detail_page.query_selector(OLXSelectors.DESCRIPTION_MODAL)
+                    if modal_desc:
+                        detail_data["description"] = (await modal_desc.inner_text()).strip()
             except Exception:
                 pass
 
-            desc_el = await detail_page.query_selector(OLXSelectors.DESCRIPTION)
-            if desc_el:
-                detail_data["description"] = (await desc_el.inner_text()).strip()
+            # Fallback: if modal didn't work, get the partial description
+            if not detail_data["description"]:
+                desc_el = await detail_page.query_selector(OLXSelectors.DESCRIPTION)
+                if desc_el:
+                    detail_data["description"] = (await desc_el.inner_text()).strip()
 
             # Extract seller name and navigate to seller profile for join date
             seller_el = await detail_page.query_selector(OLXSelectors.SELLER_PROFILE_LINK)
