@@ -249,7 +249,15 @@ class OLXScraper(BaseScraper):
             if await self._detect_captcha(detail_page):
                 await self._handle_captcha(detail_page)
 
-            # Extract description
+            # Extract description (click "Selengkapnya" to expand if present)
+            try:
+                expand_btn = await detail_page.query_selector(OLXSelectors.DESCRIPTION_EXPAND)
+                if expand_btn:
+                    await expand_btn.click()
+                    await asyncio.sleep(0.5)
+            except Exception:
+                pass
+
             desc_el = await detail_page.query_selector(OLXSelectors.DESCRIPTION)
             if desc_el:
                 detail_data["description"] = (await desc_el.inner_text()).strip()

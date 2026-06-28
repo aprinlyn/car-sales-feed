@@ -37,6 +37,7 @@ class StoredListing(Base):
     description = Column(Text, nullable=False, default="")
     seller_name = Column(String, nullable=False, default="")
     seller_contact = Column(String, nullable=True)
+    seller_join_date = Column(DateTime, nullable=True)
     posting_date = Column(DateTime, nullable=True)
     mileage = Column(Integer, nullable=True)
     year_of_manufacture = Column(Integer, nullable=True)

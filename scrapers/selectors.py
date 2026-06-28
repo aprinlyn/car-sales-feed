@@ -26,6 +26,12 @@ class OLXSelectors:
 
     # --- Listing detail page ---
     DESCRIPTION = "[data-aut-id='itemDescriptionContent']"
+    DESCRIPTION_EXPAND = (
+        "button:has-text('Selengkapnya'), "
+        "a:has-text('Selengkapnya'), "
+        "[data-aut-id='btnLoadMore'], "
+        "span:has-text('Selengkapnya')"
+    )
     SELLER_PROFILE_LINK = "[data-aut-id='profileCard'] a"
     PHONE_BUTTON = "[data-aut-id='btnCall']"
     GALLERY_IMAGES = "[data-aut-id='gallery'] img, [data-aut-id='image-gallery'] img"

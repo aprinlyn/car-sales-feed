@@ -105,6 +105,7 @@ class DatabaseManager:
             description=listing.raw.description,
             seller_name=listing.raw.seller_name,
             seller_contact=listing.raw.seller_contact,
+            seller_join_date=listing.raw.seller_join_date,
             posting_date=listing.raw.posting_date,
             mileage=listing.raw.mileage,
             year_of_manufacture=listing.raw.year_of_manufacture,
@@ -127,6 +128,7 @@ class DatabaseManager:
         existing.location = listing.raw.location
         existing.description = listing.raw.description
         existing.seller_contact = listing.raw.seller_contact
+        existing.seller_join_date = listing.raw.seller_join_date
         existing.posting_date = listing.raw.posting_date
         existing.mileage = listing.raw.mileage
         existing.year_of_manufacture = listing.raw.year_of_manufacture
