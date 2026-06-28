@@ -1,6 +1,0 @@
-2026/06/28-15:22:37.555 1b1b83 Reusing MANIFEST /Users/apriliyantoko/Documents/Code/car-sales-feed/browser_profile/Default/Local Storage/leveldb/MANIFEST-000001
-2026/06/28-15:22:37.557 1b1b83 Recovering log #4
-2026/06/28-15:22:37.558 1b1b83 Reusing old log /Users/apriliyantoko/Documents/Code/car-sales-feed/browser_profile/Default/Local Storage/leveldb/000004.log 
-2026/06/28-15:23:13.681 1b1b87 Level-0 table #7: started
-2026/06/28-15:23:13.683 1b1b87 Level-0 table #7: 27101 bytes OK
-2026/06/28-15:23:13.688 1b1b87 Delete type=0 #4

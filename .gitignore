@@ -1,4 +1,12 @@
 .kiro/
 .pytest_cache/
+.hypothesis/
 .env
-.browser_profile/
+browser_profile/
+car_sales_feed.egg-info/
+__pycache__/
+*.pyc
+*.db
+dead_letter.jsonl
+debug_screenshot.png
+debug_page.html
