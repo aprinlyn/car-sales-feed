@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from datetime import datetime
 
@@ -12,6 +13,7 @@ from playwright.async_api import Page, ElementHandle
 from config.manager import ConfigManager
 from models.listing import RawListing, ScrapingStats, SourcePlatform
 from scrapers.base import BaseScraper, CaptchaDetectedError, ScraperError
+from scrapers.selectors import OLXSelectors
 
 logger = logging.getLogger(__name__)
 
@@ -105,21 +107,20 @@ class OLXScraper(BaseScraper):
 
         # Wait for listing elements to appear
         try:
-            await page.wait_for_selector("[data-aut-id='itemBox']", timeout=10000)
+            await page.wait_for_selector(OLXSelectors.LISTING_CARD, timeout=10000)
         except Exception:
             logger.warning("No listing elements found on page")
             return listings
 
-        listing_elements = await page.query_selector_all("[data-aut-id='itemBox']")
+        listing_elements = await page.query_selector_all(OLXSelectors.LISTING_CARD)
 
         for element in listing_elements:
             try:
                 listing = await self._extract_listing(page, element)
-                print(listing)
                 if listing is None:
                     self.stats.total_skipped += 1
                     continue
-                    
+
                 if self._validate_listing(listing):
                     listings.append(listing)
                     self.stats.total_extracted += 1
@@ -144,7 +145,7 @@ class OLXScraper(BaseScraper):
         """
         try:
             # Extract link to detail page
-            link_el = await element.query_selector("a")
+            link_el = await element.query_selector(OLXSelectors.LISTING_LINK)
             if not link_el:
                 return None
 
@@ -155,20 +156,20 @@ class OLXScraper(BaseScraper):
             source_url = href if href.startswith("http") else f"{OLX_BASE_URL}{href}"
 
             # Extract title from card
-            title_el = await element.query_selector("[data-aut-id='itemTitle']")
+            title_el = await element.query_selector(OLXSelectors.ITEM_TITLE)
             title = await title_el.inner_text() if title_el else ""
 
             # Extract price from card
-            price_el = await element.query_selector("[data-aut-id='itemPrice']")
+            price_el = await element.query_selector(OLXSelectors.ITEM_PRICE)
             price_text = await price_el.inner_text() if price_el else ""
             price = self._parse_price(price_text)
 
             # Extract location from card
-            location_el = await element.query_selector("[data-aut-id='item-location']")
+            location_el = await element.query_selector(OLXSelectors.ITEM_LOCATION)
             location = await location_el.inner_text() if location_el else ""
 
             # Extract date from card
-            date_el = await element.query_selector("[data-aut-id='item-date']")
+            date_el = await element.query_selector(OLXSelectors.ITEM_DATE)
             date_text = await date_el.inner_text() if date_el else ""
 
             # Navigate to detail page for full information
@@ -220,12 +221,12 @@ class OLXScraper(BaseScraper):
                 await self._handle_captcha(detail_page)
 
             # Extract description
-            desc_el = await detail_page.query_selector("[data-aut-id='itemDescriptionContent']")
+            desc_el = await detail_page.query_selector(OLXSelectors.DESCRIPTION)
             if desc_el:
                 detail_data["description"] = (await desc_el.inner_text()).strip()
 
             # Extract seller name and navigate to seller profile for join date
-            seller_el = await detail_page.query_selector("[data-aut-id='profileCard'] a")
+            seller_el = await detail_page.query_selector(OLXSelectors.SELLER_PROFILE_LINK)
             if seller_el:
                 detail_data["seller_name"] = (await seller_el.inner_text()).strip()
 
@@ -235,16 +236,14 @@ class OLXScraper(BaseScraper):
                     detail_data["seller_join_date"] = seller_join_date
 
             # Extract seller contact (phone number if visible)
-            phone_el = await detail_page.query_selector("[data-aut-id='btnCall']")
+            phone_el = await detail_page.query_selector(OLXSelectors.PHONE_BUTTON)
             if phone_el:
                 phone_text = await phone_el.get_attribute("href")
                 if phone_text and phone_text.startswith("tel:"):
                     detail_data["seller_contact"] = phone_text[4:]
 
             # Extract images
-            image_elements = await detail_page.query_selector_all(
-                "[data-aut-id='gallery'] img, [data-aut-id='image-gallery'] img"
-            )
+            image_elements = await detail_page.query_selector_all(OLXSelectors.GALLERY_IMAGES)
             image_urls = []
             for img in image_elements[:20]:
                 src = await img.get_attribute("src")
@@ -253,9 +252,7 @@ class OLXScraper(BaseScraper):
             detail_data["image_urls"] = image_urls
 
             # Extract vehicle details (mileage, year)
-            detail_items = await detail_page.query_selector_all(
-                "[data-aut-id='itemDetails'] li, .detail-item"
-            )
+            detail_items = await detail_page.query_selector_all(OLXSelectors.VEHICLE_DETAILS)
             for item in detail_items:
                 text = await item.inner_text()
                 text_lower = text.lower()
@@ -265,7 +262,7 @@ class OLXScraper(BaseScraper):
                     detail_data["year_of_manufacture"] = self._parse_number(text)
 
             # Extract location from detail if not already available
-            loc_el = await detail_page.query_selector("[data-aut-id='itemLocation']")
+            loc_el = await detail_page.query_selector(OLXSelectors.DETAIL_LOCATION)
             if loc_el:
                 detail_data["location"] = (await loc_el.inner_text()).strip()
 
@@ -299,16 +296,7 @@ class OLXScraper(BaseScraper):
             await self._navigate_with_retry(seller_page, seller_url, timeout_ms=self._timeout_ms)
 
             # Look for member since / join date element
-            # OLX typically shows "Member since <date>" on the profile page
-            join_date_selectors = [
-                "[data-aut-id='memberSince']",
-                "[class*='member-since']",
-                "[class*='joinDate']",
-                "span:has-text('Member since')",
-                "span:has-text('Bergabung')",
-            ]
-
-            for selector in join_date_selectors:
+            for selector in OLXSelectors.SELLER_JOIN_DATE:
                 el = await seller_page.query_selector(selector)
                 if el:
                     text = (await el.inner_text()).strip()
@@ -317,9 +305,7 @@ class OLXScraper(BaseScraper):
                         return parsed
 
             # Fallback: search for date pattern in the profile card area
-            profile_area = await seller_page.query_selector(
-                "[data-aut-id='profileCard'], [class*='profile'], [class*='seller']"
-            )
+            profile_area = await seller_page.query_selector(OLXSelectors.SELLER_PROFILE_AREA)
             if profile_area:
                 profile_text = await profile_area.inner_text()
                 parsed = self._parse_join_date(profile_text)
@@ -334,68 +320,10 @@ class OLXScraper(BaseScraper):
             if seller_page:
                 await seller_page.close()
 
-    @staticmethod
-    def _parse_join_date(text: str) -> datetime | None:
-        """Parse join date from seller profile text.
-
-        Handles formats like:
-        - "Member since Jan 2020"
-        - "Bergabung sejak Jan 2020"
-        - "Member since 15 Jan 2020"
-        """
-        if not text:
-            return None
-
-        import re
-
-        # Remove common prefixes
-        cleaned = text.lower()
-        for prefix in ("member since", "bergabung sejak", "bergabung"):
-            if prefix in cleaned:
-                cleaned = cleaned.split(prefix)[-1].strip()
-                break
-
-        # Try common date formats
-        formats = [
-            "%b %Y",         # "Jan 2020"
-            "%B %Y",         # "January 2020"
-            "%d %b %Y",     # "15 Jan 2020"
-            "%d %B %Y",     # "15 January 2020"
-            "%d/%m/%Y",     # "15/01/2020"
-            "%Y-%m-%d",     # "2020-01-15"
-            "%d %b, %Y",   # "15 Jan, 2020"
-        ]
-
-        for fmt in formats:
-            try:
-                return datetime.strptime(cleaned, fmt)
-            except ValueError:
-                continue
-
-        # Try extracting just month and year with regex
-        month_year_match = re.search(
-            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+(\d{4})",
-            cleaned,
-        )
-        if month_year_match:
-            try:
-                return datetime.strptime(
-                    f"{month_year_match.group(1)[:3]} {month_year_match.group(2)}",
-                    "%b %Y",
-                )
-            except ValueError:
-                pass
-
-        return None
-
     async def _navigate_next_page(self, page: Page, current_page: int) -> bool:
         """Navigate to the next page. Returns True if next page exists."""
         try:
-            # Look for next page button/link
-            next_btn = await page.query_selector(
-                "[data-aut-id='btnNext'], a[aria-label='Next'], "
-                "button[aria-label='Next'], .pagination a:last-child"
-            )
+            next_btn = await page.query_selector(OLXSelectors.NEXT_PAGE)
 
             if not next_btn:
                 return False
@@ -415,16 +343,7 @@ class OLXScraper(BaseScraper):
     async def _detect_captcha(self, page: Page) -> bool:
         """Detect if the page is showing a captcha or block."""
         try:
-            # Common captcha indicators
-            captcha_selectors = [
-                "iframe[src*='captcha']",
-                "iframe[src*='recaptcha']",
-                "[class*='captcha']",
-                "[id*='captcha']",
-                "#challenge-running",
-                ".cf-browser-verification",
-            ]
-            for selector in captcha_selectors:
+            for selector in OLXSelectors.CAPTCHA_INDICATORS:
                 el = await page.query_selector(selector)
                 if el:
                     return True
@@ -476,6 +395,58 @@ class OLXScraper(BaseScraper):
         raise CaptchaDetectedError(
             f"Captcha not resolved after {self._max_captcha_retries} attempts"
         )
+
+    @staticmethod
+    def _parse_join_date(text: str) -> datetime | None:
+        """Parse join date from seller profile text.
+
+        Handles formats like:
+        - "Member since Jan 2020"
+        - "Bergabung sejak Jan 2020"
+        - "Member since 15 Jan 2020"
+        """
+        if not text:
+            return None
+
+        # Remove common prefixes
+        cleaned = text.lower()
+        for prefix in ("member since", "bergabung sejak", "bergabung"):
+            if prefix in cleaned:
+                cleaned = cleaned.split(prefix)[-1].strip()
+                break
+
+        # Try common date formats
+        formats = [
+            "%b %Y",         # "Jan 2020"
+            "%B %Y",         # "January 2020"
+            "%d %b %Y",     # "15 Jan 2020"
+            "%d %B %Y",     # "15 January 2020"
+            "%d/%m/%Y",     # "15/01/2020"
+            "%Y-%m-%d",     # "2020-01-15"
+            "%d %b, %Y",   # "15 Jan, 2020"
+        ]
+
+        for fmt in formats:
+            try:
+                return datetime.strptime(cleaned, fmt)
+            except ValueError:
+                continue
+
+        # Try extracting just month and year with regex
+        month_year_match = re.search(
+            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+(\d{4})",
+            cleaned,
+        )
+        if month_year_match:
+            try:
+                return datetime.strptime(
+                    f"{month_year_match.group(1)[:3]} {month_year_match.group(2)}",
+                    "%b %Y",
+                )
+            except ValueError:
+                pass
+
+        return None
 
     @staticmethod
     def _parse_price(price_text: str) -> float:

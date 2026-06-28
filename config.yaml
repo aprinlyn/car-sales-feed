@@ -1,6 +1,6 @@
 browser:
   profile_dir: "./browser_profile"
-  headless: true  # Set to false to show the browser window
+  headless: false  # Set to false to show the browser window
 
 scraping:
   olx:
