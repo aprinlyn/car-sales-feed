@@ -40,6 +40,7 @@ class RawListing:
     mileage: int | None = None  # km
     year_of_manufacture: int | None = None
     image_urls: list[str] = field(default_factory=list)  # max 20
+    seller_join_date: datetime | None = None  # Date the seller joined the platform
     # Facebook-specific fields
     seller_account_age_days: int | None = None
     seller_verification_status: bool | None = None
