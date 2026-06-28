@@ -1,0 +1,12 @@
+2026/06/28-15:23:44.182 1b25a7 Reusing MANIFEST /Users/apriliyantoko/Documents/Code/car-sales-feed/browser_profile/Default/IndexedDB/https_www.olx.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/28-15:23:44.182 1b25a7 Recovering log #7
+2026/06/28-15:23:44.184 1b25a7 Reusing old log /Users/apriliyantoko/Documents/Code/car-sales-feed/browser_profile/Default/IndexedDB/https_www.olx.co.id_0.indexeddb.leveldb/000007.log 
+2026/06/28-15:24:13.478 1b25a7 Level-0 table #12: started
+2026/06/28-15:24:13.488 1b25a7 Level-0 table #12: 970531 bytes OK
+2026/06/28-15:24:13.495 1b25a7 Delete type=0 #7
+2026/06/28-15:24:16.711 1b25a4 Compacting 1@1 + 1@2 files
+2026/06/28-15:24:16.716 1b25a4 Generated table #13@1: 307 keys, 16145 bytes
+2026/06/28-15:24:16.717 1b25a4 Compacted 1@1 + 1@2 files => 16145 bytes
+2026/06/28-15:24:16.720 1b25a4 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/06/28-15:24:16.720 1b25a4 Delete type=2 #12
+2026/06/28-15:24:16.720 1b25a4 Delete type=2 #9

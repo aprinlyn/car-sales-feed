@@ -13,12 +13,12 @@ from playwright.async_api import Page, ElementHandle
 from config.manager import ConfigManager
 from models.listing import RawListing, ScrapingStats, SourcePlatform
 from scrapers.base import BaseScraper, CaptchaDetectedError, ScraperError
+from scrapers.locations import get_location
 from scrapers.selectors import OLXSelectors
 
 logger = logging.getLogger(__name__)
 
 OLX_BASE_URL = "https://www.olx.co.id"
-OLX_CARS_URL = f"{OLX_BASE_URL}/mobil-bekas_c198"
 
 
 class OLXScraper(BaseScraper):
@@ -41,6 +41,12 @@ class OLXScraper(BaseScraper):
         self._captcha_pause = float(config.get("scraping.olx.captcha_pause_seconds", 60))
         self._max_captcha_retries = 3
 
+        # Build OLX URL with location filter
+        location_name = config.get("browser.location", "jakarta")
+        city = get_location(location_name)
+        self._cars_url = f"{OLX_BASE_URL}/mobil-bekas_c198?filter=location_{city.olx_location_slug}"
+        logger.info("OLX scraper configured for location: %s (%s)", city.name, self._cars_url)
+
     async def scrape(self) -> list[RawListing]:
         """Execute a full OLX scraping session.
 
@@ -55,12 +61,25 @@ class OLXScraper(BaseScraper):
 
             # Navigate to OLX cars section
             await self._navigate_with_retry(
-                page, OLX_CARS_URL, timeout_ms=self._timeout_ms
+                page, self._cars_url, timeout_ms=self._timeout_ms
             )
 
-            # Check for captcha on initial load
-            if await self._detect_captcha(page):
+            # Brief pause to let initial content render
+            await asyncio.sleep(2)
+
+            # In headed mode, let user handle any captcha/challenge manually
+            # Only auto-detect in headless mode
+            headless = self.config.get("browser.headless", True)
+            if headless and await self._detect_captcha(page):
                 await self._handle_captcha(page)
+            elif not headless:
+                # Wait for user to solve any challenge if present
+                # Just check if listings exist yet, if not wait longer
+                for _ in range(30):  # Wait up to 90s for page to be ready
+                    el = await page.query_selector(OLXSelectors.LISTING_CARD)
+                    if el:
+                        break
+                    await asyncio.sleep(3)
 
             # Scrape pages
             for page_num in range(1, self._max_pages + 1):
@@ -78,10 +97,6 @@ class OLXScraper(BaseScraper):
 
                     # Configurable delay between pages
                     await asyncio.sleep(self._page_delay)
-
-                    # Check for captcha after navigation
-                    if await self._detect_captcha(page):
-                        await self._handle_captcha(page)
 
         except CaptchaDetectedError:
             logger.error(
@@ -105,11 +120,25 @@ class OLXScraper(BaseScraper):
         """Extract all listings from the current results page."""
         listings: list[RawListing] = []
 
+        # Scroll down to trigger lazy-loading of listing cards (ads cover top)
+        await self._scroll_to_load_listings(page)
+
         # Wait for listing elements to appear
         try:
-            await page.wait_for_selector(OLXSelectors.LISTING_CARD, timeout=10000)
+            await page.wait_for_selector(OLXSelectors.LISTING_CARD, timeout=30000)
         except Exception:
-            logger.warning("No listing elements found on page")
+            # Debug: save screenshot and HTML to diagnose why listings aren't found
+            try:
+                await page.screenshot(path="debug_screenshot.png")
+                html = await page.content()
+                with open("debug_page.html", "w", encoding="utf-8") as f:
+                    f.write(html)
+                logger.warning(
+                    "No listing elements found on page. "
+                    "Saved debug_screenshot.png and debug_page.html for inspection."
+                )
+            except Exception as e:
+                logger.warning("No listing elements found on page (debug save failed: %s)", e)
             return listings
 
         listing_elements = await page.query_selector_all(OLXSelectors.LISTING_CARD)
@@ -320,6 +349,22 @@ class OLXScraper(BaseScraper):
             if seller_page:
                 await seller_page.close()
 
+    async def _scroll_to_load_listings(self, page: Page) -> None:
+        """Scroll down the page to bypass ads and trigger lazy-loading of listings."""
+        scroll_distance = 500  # pixels per scroll step
+        max_scrolls = 10
+        for _ in range(max_scrolls):
+            await page.mouse.wheel(0, scroll_distance)
+            await asyncio.sleep(0.5)
+
+            # Stop scrolling once we find at least one listing card
+            el = await page.query_selector(OLXSelectors.LISTING_CARD)
+            if el:
+                # Scroll a bit more to load additional cards
+                await page.mouse.wheel(0, scroll_distance * 2)
+                await asyncio.sleep(1)
+                break
+
     async def _navigate_next_page(self, page: Page, current_page: int) -> bool:
         """Navigate to the next page. Returns True if next page exists."""
         try:
@@ -341,24 +386,29 @@ class OLXScraper(BaseScraper):
             return False
 
     async def _detect_captcha(self, page: Page) -> bool:
-        """Detect if the page is showing a captcha or block."""
+        """Detect if the page is showing a captcha or Cloudflare challenge."""
         try:
             for selector in OLXSelectors.CAPTCHA_INDICATORS:
                 el = await page.query_selector(selector)
                 if el:
                     return True
 
-            # Check page content for block messages
+            # Check for Cloudflare-specific challenge page (more specific checks)
+            title = await page.title()
+            if "just a moment" in title.lower():
+                return True
+
+            # Check for the OLX-specific "not connected" block page
             content = await page.content()
-            block_indicators = [
-                "blocked",
-                "access denied",
-                "verify you are human",
-                "unusual traffic",
-            ]
             content_lower = content.lower()
-            for indicator in block_indicators:
-                if indicator in content_lower:
+            block_phrases = [
+                "verify you are human",
+                "jaringan anda tidak terkoneksi",
+                "checking your browser",
+                "please wait while we verify",
+            ]
+            for phrase in block_phrases:
+                if phrase in content_lower:
                     return True
 
             return False
@@ -366,31 +416,48 @@ class OLXScraper(BaseScraper):
             return False
 
     async def _handle_captcha(self, page: Page) -> None:
-        """Handle captcha detection with pause and retry.
+        """Handle captcha/Cloudflare challenge.
 
-        Pauses for configurable delay, retries up to 3 times.
-        Raises CaptchaDetectedError if unresolved.
+        In headed mode: waits for the user to manually solve it.
+        In headless mode: pauses and retries (reload), aborts after max retries.
         """
+        headless = self.config.get("browser.headless", True)
+
         for attempt in range(self._max_captcha_retries):
-            logger.warning(
-                "[%s] Captcha/block detected on OLX (attempt %d/%d). Pausing for %ds...",
-                time.strftime("%Y-%m-%d %H:%M:%S"),
-                attempt + 1,
-                self._max_captcha_retries,
-                int(self._captcha_pause),
-            )
+            if not headless:
+                logger.warning(
+                    "[%s] Captcha/block detected. Please solve it manually in the browser. "
+                    "Waiting up to 120s for resolution (attempt %d/%d)...",
+                    time.strftime("%Y-%m-%d %H:%M:%S"),
+                    attempt + 1,
+                    self._max_captcha_retries,
+                )
+                # Wait up to 120s for the user to solve the captcha
+                # Check every 3 seconds if it's resolved
+                for _ in range(40):
+                    await asyncio.sleep(3)
+                    if not await self._detect_captcha(page):
+                        logger.info("Captcha resolved manually.")
+                        return
+            else:
+                logger.warning(
+                    "[%s] Captcha/block detected (attempt %d/%d). Pausing for %ds...",
+                    time.strftime("%Y-%m-%d %H:%M:%S"),
+                    attempt + 1,
+                    self._max_captcha_retries,
+                    int(self._captcha_pause),
+                )
+                await asyncio.sleep(self._captcha_pause)
 
-            await asyncio.sleep(self._captcha_pause)
+                # Reload the page
+                try:
+                    await page.reload(timeout=self._timeout_ms)
+                except Exception:
+                    pass
 
-            # Reload the page
-            try:
-                await page.reload(timeout=self._timeout_ms)
-            except Exception:
-                pass
-
-            if not await self._detect_captcha(page):
-                logger.info("Captcha resolved after attempt %d", attempt + 1)
-                return
+                if not await self._detect_captcha(page):
+                    logger.info("Captcha resolved after attempt %d", attempt + 1)
+                    return
 
         raise CaptchaDetectedError(
             f"Captcha not resolved after {self._max_captcha_retries} attempts"

@@ -10,6 +10,7 @@ from typing import Any
 
 from playwright.async_api import BrowserContext, Page, async_playwright
 
+from scrapers.locations import get_location
 from config.manager import ConfigManager
 from models.listing import RawListing, ScrapingStats
 
@@ -51,13 +52,20 @@ class BaseScraper(ABC):
         Uses playwright.chromium.launch_persistent_context(user_data_dir=self._profile_dir)
         to retain cookies, local storage, and sessions across runs.
         """
-        headless = self.config.get("browser.headless", True)
+        headless = self.config.get("browser.headless", False)
+        channel = self.config.get("browser.channel", "chrome")
+        location_name = self.config.get("browser.location", "jakarta")
+        city = get_location(location_name)
+
         self._playwright = await async_playwright().start()
         self._context = await self._playwright.chromium.launch_persistent_context(
             user_data_dir=self._profile_dir,
             headless=headless,
+            channel=channel,
             locale="id-ID",
             timezone_id="Asia/Jakarta",
+            geolocation={"latitude": city.latitude, "longitude": city.longitude},
+            permissions=["geolocation"],
             user_agent=(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "

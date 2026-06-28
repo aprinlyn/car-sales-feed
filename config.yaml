@@ -1,6 +1,8 @@
 browser:
   profile_dir: "./browser_profile"
-  headless: false  # Set to false to show the browser window
+  headless: false  # Set to true to hide browser window (Cloudflare blocks headless)
+  channel: "chrome"  # Use real Chrome instead of Playwright's Chromium
+  location: "jakarta"  # City for geolocation and OLX filter: jakarta, bandung, yogyakarta
 
 scraping:
   olx:
