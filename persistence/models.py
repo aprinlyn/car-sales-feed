@@ -42,6 +42,7 @@ class StoredListing(Base):
     mileage = Column(Integer, nullable=True)
     year_of_manufacture = Column(Integer, nullable=True)
     image_urls = Column(Text, nullable=False, default="[]")  # JSON-serialized list
+    local_image_paths = Column(Text, nullable=False, default="[]")  # JSON-serialized list of local paths
     source_url = Column(String, nullable=False)
     source_platform = Column(String, nullable=False)
     scrape_timestamp = Column(DateTime, nullable=False)

@@ -30,7 +30,7 @@ class OLXSelectors:
     DESCRIPTION_MODAL = "[data-aut-id='modalDescriptionContent']"
     SELLER_PROFILE_LINK = "[data-aut-id='profileCard'] a"
     PHONE_BUTTON = "[data-aut-id='btnCall']"
-    GALLERY_IMAGES = "[data-aut-id='gallery'] img, [data-aut-id='image-gallery'] img"
+    GALLERY_IMAGES = "[data-aut-id='imageGallery'] [data-aut-id='defaultImg']"
     VEHICLE_DETAILS = "[data-aut-id='itemDetails'] li, .detail-item"
     DETAIL_LOCATION = "[data-aut-id='itemLocation']"
 

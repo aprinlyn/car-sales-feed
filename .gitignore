@@ -3,6 +3,7 @@
 .hypothesis/
 .env
 browser_profile/
+images/
 car_sales_feed.egg-info/
 __pycache__/
 *.pyc

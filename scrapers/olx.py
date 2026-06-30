@@ -226,7 +226,10 @@ class OLXScraper(BaseScraper):
             return None
 
     async def _extract_detail_page(self, page: Page, url: str) -> dict:
-        """Navigate to a listing detail page and extract full data."""
+        """Navigate to a listing detail page and extract full data.
+        
+        Reuses a single detail page tab to avoid resource exhaustion.
+        """
         detail_data: dict = {
             "description": "",
             "seller_name": "",
@@ -238,12 +241,21 @@ class OLXScraper(BaseScraper):
             "location": "",
         }
 
-        detail_page = await self._context.new_page() if self._context else None
+        # Reuse or create a single detail page
+        if not hasattr(self, '_detail_page') or self._detail_page is None or self._detail_page.is_closed():
+            self._detail_page = await self._context.new_page() if self._context else None
+        
+        detail_page = self._detail_page
         if not detail_page:
             return detail_data
 
         try:
             await self._navigate_with_retry(detail_page, url, timeout_ms=self._timeout_ms)
+
+            # Brief wait and scroll to trigger lazy-loaded images
+            await asyncio.sleep(1)
+            await detail_page.mouse.wheel(0, 300)
+            await asyncio.sleep(0.5)
 
             # Check for captcha on detail page
             if await self._detect_captcha(detail_page):
@@ -287,14 +299,9 @@ class OLXScraper(BaseScraper):
                 if phone_text and phone_text.startswith("tel:"):
                     detail_data["seller_contact"] = phone_text[4:]
 
-            # Extract images
-            image_elements = await detail_page.query_selector_all(OLXSelectors.GALLERY_IMAGES)
-            image_urls = []
-            for img in image_elements[:20]:
-                src = await img.get_attribute("src")
-                if src and not src.startswith("data:"):
-                    image_urls.append(src)
-            detail_data["image_urls"] = image_urls
+            # Extract images - skip for now (gallery uses lazy-loaded carousel)
+            # image_urls are stored as empty list; can be implemented later
+            detail_data["image_urls"] = []
 
             # Extract vehicle details (mileage, year)
             detail_items = await detail_page.query_selector_all(OLXSelectors.VEHICLE_DETAILS)
@@ -313,8 +320,6 @@ class OLXScraper(BaseScraper):
 
         except Exception as e:
             logger.debug("Error extracting detail page %s: %s", url, str(e))
-        finally:
-            await detail_page.close()
 
         return detail_data
 
@@ -323,8 +328,8 @@ class OLXScraper(BaseScraper):
 
         Navigates to the seller's profile page, looks for the member-since
         or join date element, and returns it as a datetime.
+        Reuses a single seller page tab.
         """
-        seller_page = None
         try:
             # Get the seller profile URL
             href = await seller_el.get_attribute("href")
@@ -333,8 +338,11 @@ class OLXScraper(BaseScraper):
 
             seller_url = href if href.startswith("http") else f"{OLX_BASE_URL}{href}"
 
-            # Open seller profile in a new page
-            seller_page = await self._context.new_page() if self._context else None
+            # Reuse or create a single seller page
+            if not hasattr(self, '_seller_page') or self._seller_page is None or self._seller_page.is_closed():
+                self._seller_page = await self._context.new_page() if self._context else None
+
+            seller_page = self._seller_page
             if not seller_page:
                 return None
 
@@ -361,9 +369,6 @@ class OLXScraper(BaseScraper):
         except Exception as e:
             logger.debug("Error extracting seller join date: %s", str(e))
             return None
-        finally:
-            if seller_page:
-                await seller_page.close()
 
     async def _scroll_to_load_listings(self, page: Page) -> None:
         """Scroll down the page to bypass ads and trigger lazy-loading of listings."""

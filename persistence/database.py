@@ -27,19 +27,45 @@ class DatabaseManager:
         db_url = config.get("database.url", "sqlite:///car_sales_feed.db")
         self._retry_max = int(config.get("database.retry_max", 3))
         self._dead_letter_path = config.get("database.dead_letter_path", "dead_letter.jsonl")
+        self._current_local_image_paths: list[str] = []
 
         self.engine = create_engine(db_url, echo=False)
         self.SessionFactory = sessionmaker(bind=self.engine)
 
-        # Create tables if they don't exist
-        Base.metadata.create_all(self.engine)
+        # Run Alembic migrations to ensure schema is up-to-date
+        self._run_migrations()
 
-    def store_listing(self, listing: ScoredListing) -> None:
+    def _run_migrations(self) -> None:
+        """Run pending Alembic migrations on startup."""
+        from pathlib import Path
+
+        # Only run migrations if alembic.ini exists (skip in tests with in-memory DB)
+        alembic_ini = Path("alembic.ini")
+        if not alembic_ini.exists():
+            Base.metadata.create_all(self.engine)
+            return
+
+        try:
+            from alembic.config import Config
+            from alembic import command
+
+            alembic_cfg = Config("alembic.ini")
+            # Override the URL to use our configured engine's URL
+            alembic_cfg.set_main_option(
+                "sqlalchemy.url", str(self.engine.url)
+            )
+            command.upgrade(alembic_cfg, "head")
+        except Exception as e:
+            logger.warning("Alembic migration failed (%s), falling back to create_all", e)
+            Base.metadata.create_all(self.engine)
+
+    def store_listing(self, listing: ScoredListing, local_image_paths: list[str] | None = None) -> None:
         """Store or update a listing with deduplication.
 
         Deduplication key: (title, price, seller_name, source_platform).
         If a duplicate exists, update the existing record with changed fields.
         """
+        self._current_local_image_paths = local_image_paths or []
         attempt = 0
         last_error: Exception | None = None
 
@@ -110,6 +136,7 @@ class DatabaseManager:
             mileage=listing.raw.mileage,
             year_of_manufacture=listing.raw.year_of_manufacture,
             image_urls=json.dumps(listing.raw.image_urls),
+            local_image_paths=json.dumps(self._current_local_image_paths),
             source_url=listing.raw.source_url,
             source_platform=listing.raw.source_platform.value,
             scrape_timestamp=listing.raw.scrape_timestamp,
@@ -133,6 +160,7 @@ class DatabaseManager:
         existing.mileage = listing.raw.mileage
         existing.year_of_manufacture = listing.raw.year_of_manufacture
         existing.image_urls = json.dumps(listing.raw.image_urls)
+        existing.local_image_paths = json.dumps(self._current_local_image_paths)
         existing.source_url = listing.raw.source_url
         existing.scrape_timestamp = listing.raw.scrape_timestamp
         existing.score = listing.score
