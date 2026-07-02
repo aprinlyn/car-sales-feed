@@ -229,6 +229,7 @@ class OLXScraper(BaseScraper):
         """Navigate to a listing detail page and extract full data.
         
         Reuses a single detail page tab to avoid resource exhaustion.
+        Entire extraction is wrapped in a 30s timeout.
         """
         detail_data: dict = {
             "description": "",
@@ -241,134 +242,80 @@ class OLXScraper(BaseScraper):
             "location": "",
         }
 
+        try:
+            result = await asyncio.wait_for(
+                self._do_extract_detail(url, detail_data),
+                timeout=30,
+            )
+            return result
+        except asyncio.TimeoutError:
+            logger.warning("Detail page extraction timed out for %s", url)
+            return detail_data
+        except Exception as e:
+            logger.debug("Error extracting detail page %s: %s", url, str(e))
+            return detail_data
+
+    async def _do_extract_detail(self, url: str, detail_data: dict) -> dict:
+        """Internal detail extraction logic."""
         # Reuse or create a single detail page
         if not hasattr(self, '_detail_page') or self._detail_page is None or self._detail_page.is_closed():
             self._detail_page = await self._context.new_page() if self._context else None
-        
+
         detail_page = self._detail_page
         if not detail_page:
             return detail_data
 
+        await self._navigate_with_retry(detail_page, url, timeout_ms=self._timeout_ms)
+        await asyncio.sleep(1)
+
+        # Extract description
         try:
-            await self._navigate_with_retry(detail_page, url, timeout_ms=self._timeout_ms)
+            expand_btn = await detail_page.query_selector(OLXSelectors.DESCRIPTION_EXPAND)
+            if expand_btn and await expand_btn.is_visible():
+                await expand_btn.click()
+                await asyncio.sleep(1)
+                modal_desc = await detail_page.query_selector(OLXSelectors.DESCRIPTION_MODAL)
+                if modal_desc:
+                    detail_data["description"] = (await modal_desc.inner_text()).strip()
+        except Exception:
+            pass
 
-            # Brief wait and scroll to trigger lazy-loaded images
-            await asyncio.sleep(1)
-            await detail_page.mouse.wheel(0, 300)
-            await asyncio.sleep(0.5)
+        if not detail_data["description"]:
+            desc_el = await detail_page.query_selector(OLXSelectors.DESCRIPTION)
+            if desc_el:
+                detail_data["description"] = (await desc_el.inner_text()).strip()
 
-            # Check for captcha on detail page
-            if await self._detect_captcha(detail_page):
-                await self._handle_captcha(detail_page)
+        # Extract seller name (but skip navigating to seller profile page)
+        seller_el = await detail_page.query_selector(OLXSelectors.SELLER_PROFILE_LINK)
+        if seller_el:
+            detail_data["seller_name"] = (await seller_el.inner_text()).strip()
 
-            # Extract description
-            # First try clicking "Selengkapnya" button to open full description modal
-            try:
-                expand_btn = await detail_page.query_selector(OLXSelectors.DESCRIPTION_EXPAND)
-                if expand_btn and await expand_btn.is_visible():
-                    await expand_btn.click()
-                    await asyncio.sleep(1)
+        # Extract seller contact
+        phone_el = await detail_page.query_selector(OLXSelectors.PHONE_BUTTON)
+        if phone_el:
+            phone_text = await phone_el.get_attribute("href")
+            if phone_text and phone_text.startswith("tel:"):
+                detail_data["seller_contact"] = phone_text[4:]
 
-                    # Read from the modal that appears after clicking
-                    modal_desc = await detail_page.query_selector(OLXSelectors.DESCRIPTION_MODAL)
-                    if modal_desc:
-                        detail_data["description"] = (await modal_desc.inner_text()).strip()
-            except Exception:
-                pass
+        # Images skipped for MVP
+        detail_data["image_urls"] = []
 
-            # Fallback: if modal didn't work, get the partial description
-            if not detail_data["description"]:
-                desc_el = await detail_page.query_selector(OLXSelectors.DESCRIPTION)
-                if desc_el:
-                    detail_data["description"] = (await desc_el.inner_text()).strip()
+        # Extract vehicle details (mileage, year)
+        detail_items = await detail_page.query_selector_all(OLXSelectors.VEHICLE_DETAILS)
+        for item in detail_items:
+            text = await item.inner_text()
+            text_lower = text.lower()
+            if "kilometer" in text_lower or "km" in text_lower:
+                detail_data["mileage"] = self._parse_number(text)
+            elif "tahun" in text_lower or "year" in text_lower:
+                detail_data["year_of_manufacture"] = self._parse_number(text)
 
-            # Extract seller name and navigate to seller profile for join date
-            seller_el = await detail_page.query_selector(OLXSelectors.SELLER_PROFILE_LINK)
-            if seller_el:
-                detail_data["seller_name"] = (await seller_el.inner_text()).strip()
-
-                # Navigate to seller profile to get join date
-                seller_join_date = await self._extract_seller_join_date(seller_el)
-                if seller_join_date:
-                    detail_data["seller_join_date"] = seller_join_date
-
-            # Extract seller contact (phone number if visible)
-            phone_el = await detail_page.query_selector(OLXSelectors.PHONE_BUTTON)
-            if phone_el:
-                phone_text = await phone_el.get_attribute("href")
-                if phone_text and phone_text.startswith("tel:"):
-                    detail_data["seller_contact"] = phone_text[4:]
-
-            # Extract images - skip for now (gallery uses lazy-loaded carousel)
-            # image_urls are stored as empty list; can be implemented later
-            detail_data["image_urls"] = []
-
-            # Extract vehicle details (mileage, year)
-            detail_items = await detail_page.query_selector_all(OLXSelectors.VEHICLE_DETAILS)
-            for item in detail_items:
-                text = await item.inner_text()
-                text_lower = text.lower()
-                if "kilometer" in text_lower or "km" in text_lower:
-                    detail_data["mileage"] = self._parse_number(text)
-                elif "tahun" in text_lower or "year" in text_lower:
-                    detail_data["year_of_manufacture"] = self._parse_number(text)
-
-            # Extract location from detail if not already available
-            loc_el = await detail_page.query_selector(OLXSelectors.DETAIL_LOCATION)
-            if loc_el:
-                detail_data["location"] = (await loc_el.inner_text()).strip()
-
-        except Exception as e:
-            logger.debug("Error extracting detail page %s: %s", url, str(e))
+        # Extract location
+        loc_el = await detail_page.query_selector(OLXSelectors.DETAIL_LOCATION)
+        if loc_el:
+            detail_data["location"] = (await loc_el.inner_text()).strip()
 
         return detail_data
-
-    async def _extract_seller_join_date(self, seller_el: ElementHandle) -> datetime | None:
-        """Click on the seller profile link and extract the join date.
-
-        Navigates to the seller's profile page, looks for the member-since
-        or join date element, and returns it as a datetime.
-        Reuses a single seller page tab.
-        """
-        try:
-            # Get the seller profile URL
-            href = await seller_el.get_attribute("href")
-            if not href:
-                return None
-
-            seller_url = href if href.startswith("http") else f"{OLX_BASE_URL}{href}"
-
-            # Reuse or create a single seller page
-            if not hasattr(self, '_seller_page') or self._seller_page is None or self._seller_page.is_closed():
-                self._seller_page = await self._context.new_page() if self._context else None
-
-            seller_page = self._seller_page
-            if not seller_page:
-                return None
-
-            await self._navigate_with_retry(seller_page, seller_url, timeout_ms=self._timeout_ms)
-
-            # Look for member since / join date element
-            for selector in OLXSelectors.SELLER_JOIN_DATE:
-                el = await seller_page.query_selector(selector)
-                if el:
-                    text = (await el.inner_text()).strip()
-                    parsed = self._parse_join_date(text)
-                    if parsed:
-                        return parsed
-
-            # Fallback: search for date pattern in the profile card area
-            profile_area = await seller_page.query_selector(OLXSelectors.SELLER_PROFILE_AREA)
-            if profile_area:
-                profile_text = await profile_area.inner_text()
-                parsed = self._parse_join_date(profile_text)
-                if parsed:
-                    return parsed
-
-            return None
-        except Exception as e:
-            logger.debug("Error extracting seller join date: %s", str(e))
-            return None
 
     async def _scroll_to_load_listings(self, page: Page) -> None:
         """Scroll down the page to bypass ads and trigger lazy-loading of listings."""
