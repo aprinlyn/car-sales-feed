@@ -101,12 +101,30 @@ class PipelineScheduler:
             self.config.reload()
 
             # Scrape OLX
-            logger.info("Starting scrape run...")
-            olx_scraper = OLXScraper(self.config)
-            listings = await olx_scraper.scrape()
-            total_scraped = len(listings)
-            total_skipped = olx_scraper.stats.total_skipped
-            total_failed = olx_scraper.stats.total_failed
+            if self.config.get("scraping.olx.enabled", True):
+                logger.info("Starting OLX scrape...")
+                olx_scraper = OLXScraper(self.config)
+                olx_listings = await olx_scraper.scrape()
+                listings = olx_listings
+                total_scraped += len(olx_listings)
+                total_skipped += olx_scraper.stats.total_skipped
+                total_failed += olx_scraper.stats.total_failed
+            else:
+                logger.info("OLX scraper disabled, skipping")
+                listings = []
+
+            # Scrape Facebook
+            if self.config.get("scraping.facebook.enabled", False):
+                logger.info("Starting Facebook Marketplace scrape...")
+                from scrapers.facebook import FacebookScraper
+                fb_scraper = FacebookScraper(self.config)
+                fb_listings = await fb_scraper.scrape()
+                listings.extend(fb_listings)
+                total_scraped += len(fb_listings)
+                total_skipped += fb_scraper.stats.total_skipped
+                total_failed += fb_scraper.stats.total_failed
+            else:
+                logger.info("Facebook scraper disabled, skipping")
 
             # Score and persist
             for listing in listings:

@@ -6,11 +6,13 @@ browser:
 
 scraping:
   olx:
+    enabled: true
     max_pages: 10
     page_delay_seconds: 3
     timeout_seconds: 30
     captcha_pause_seconds: 60
   facebook:
+    enabled: false  # Set to true when Facebook session is ready
     max_listings: 100
     timeout_seconds: 30
     captcha_pause_seconds: 60
@@ -38,8 +40,8 @@ publishing:
     post_interval_seconds: 120
 
 scheduling:
-  scrape_cron: "0 7 * * *"
-  publish_cron: "0 17 * * *"
+  scrape_cron: "12 23 * * *"
+  publish_cron: "15 23 * * *"
   enable_scrape: true
   enable_publish: true
 
