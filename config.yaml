@@ -40,6 +40,8 @@ publishing:
 scheduling:
   scrape_cron: "0 7 * * *"
   publish_cron: "0 17 * * *"
+  enable_scrape: true
+  enable_publish: true
 
 database:
   url: "sqlite:///car_sales_feed.db"

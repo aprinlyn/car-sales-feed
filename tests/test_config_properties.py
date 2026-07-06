@@ -39,6 +39,18 @@ def minimal_valid_config() -> dict:
     }
 
 
+def test_scheduling_enable_flags_default_to_true():
+    """Enable flags default to true when not specified in config."""
+    yaml_path = write_yaml_temp(minimal_valid_config())
+
+    try:
+        cfg = ConfigManager(yaml_path=yaml_path)
+        assert cfg.get("scheduling.enable_scrape") is True
+        assert cfg.get("scheduling.enable_publish") is True
+    finally:
+        os.unlink(yaml_path)
+
+
 # --- Property 10: Environment variable precedence ---
 
 

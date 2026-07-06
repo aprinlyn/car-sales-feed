@@ -40,31 +40,38 @@ class PipelineScheduler:
         self._scorer = TrustScorer(config)
 
     def start(self) -> None:
-        """Configure and start both schedules from config."""
+        """Configure and start the scheduler based on config flags."""
         scrape_cron = self.config.get("scheduling.scrape_cron", "0 7 * * *")
         publish_cron = self.config.get("scheduling.publish_cron", "0 17 * * *")
+        enable_scrape = self.config.get("scheduling.enable_scrape", True)
+        enable_publish = self.config.get("scheduling.enable_publish", True)
 
-        # Parse cron expressions into APScheduler CronTrigger
-        self.scheduler.add_job(
-            self.run_scrape_and_score,
-            CronTrigger.from_crontab(scrape_cron),
-            id="scrape_and_score",
-            name="Scrape and Score",
-            replace_existing=True,
-        )
+        # Only register the jobs that are enabled in config
+        if enable_scrape:
+            self.scheduler.add_job(
+                self.run_scrape_and_score,
+                CronTrigger.from_crontab(scrape_cron),
+                id="scrape_and_score",
+                name="Scrape and Score",
+                replace_existing=True,
+            )
 
-        self.scheduler.add_job(
-            self.run_publish,
-            CronTrigger.from_crontab(publish_cron),
-            id="publish",
-            name="Publish to Social Media",
-            replace_existing=True,
-        )
+        if enable_publish:
+            self.scheduler.add_job(
+                self.run_publish,
+                CronTrigger.from_crontab(publish_cron),
+                id="publish",
+                name="Publish to Social Media",
+                replace_existing=True,
+            )
 
         self.scheduler.start()
         logger.info(
-            "Scheduler started — scrape: '%s', publish: '%s'",
-            scrape_cron, publish_cron,
+            "Scheduler started — scrape: '%s' (%s), publish: '%s' (%s)",
+            scrape_cron,
+            "enabled" if enable_scrape else "disabled",
+            publish_cron,
+            "enabled" if enable_publish else "disabled",
         )
 
     def stop(self) -> None:

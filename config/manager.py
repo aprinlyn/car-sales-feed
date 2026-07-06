@@ -47,6 +47,8 @@ DEFAULTS: dict[str, Any] = {
     "publishing.threads.post_interval_seconds": 120,
     "scheduling.scrape_cron": "0 7 * * *",
     "scheduling.publish_cron": "0 17 * * *",
+    "scheduling.enable_scrape": True,
+    "scheduling.enable_publish": True,
     "database.retry_max": 3,
     "database.dead_letter_path": "dead_letter.jsonl",
 }
@@ -165,6 +167,9 @@ class ConfigManager:
         # Validate numeric fields
         self._validate_numeric_fields()
 
+        # Validate boolean fields
+        self._validate_boolean_fields()
+
         # Validate browser profile directory path
         self._validate_browser_profile()
 
@@ -272,7 +277,23 @@ class ConfigManager:
                     f"Invalid configuration for '{key}': "
                     f"weight {value} must be between 0.0 and 1.0"
                 )
+    def _validate_boolean_fields(self) -> None:
+        """Validate boolean configuration fields."""
+        bool_fields = [
+            "browser.headless",
+            "scheduling.enable_scrape",
+            "scheduling.enable_publish",
+        ]
 
+        for key in bool_fields:
+            value = self._data.get(key)
+            if value is None:
+                continue
+            if not isinstance(value, bool):
+                raise ConfigError(
+                    f"Invalid configuration for '{key}': "
+                    f"expected boolean value, got {type(value).__name__} ({value!r})"
+                )
     def _validate_browser_profile(self) -> None:
         """Validate the browser profile directory path is a valid path string."""
         profile_dir = self._data.get("browser.profile_dir")

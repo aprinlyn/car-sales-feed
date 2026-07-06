@@ -53,9 +53,11 @@ def main():
 
     logger.info("Car Sales Feed is running. Press Ctrl+C to stop.")
     logger.info(
-        "Schedules: scrape='%s', publish='%s'",
+        "Schedules: scrape='%s' (%s), publish='%s' (%s)",
         config.get("scheduling.scrape_cron", "0 7 * * *"),
+        "enabled" if config.get("scheduling.enable_scrape", True) else "disabled",
         config.get("scheduling.publish_cron", "0 17 * * *"),
+        "enabled" if config.get("scheduling.enable_publish", True) else "disabled",
     )
 
     # Keep the event loop running
